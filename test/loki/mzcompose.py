@@ -17,20 +17,13 @@ from materialize.mzcompose.services import (
 SERVICES = [
     Loki(),
     Materialized(),
-    Testdrive(),
+    Testdrive(loki_addr="http://loki:3100"),
 ]
 
 
 def workflow_default(c: Composition) -> None:
-    """All mzcompose files should contain a default workflow
-
-    This workflow just runs all the other ones
-    """
-
-    testdrive = Testdrive(loki_addr="http://loki:3100")
-
-    with c.override(testdrive):
-        c.start_and_wait_for_tcp(services=["loki"])
-        c.up("materialized")
-        c.wait_for_materialized("materialized")
-        c.run("testdrive-svc", "loki.td")
+    c.start_and_wait_for_tcp(services=["loki"])
+    c.up("materialized")
+    c.wait_for_materialized("materialized")
+    c.run("testdrive-svc", "loki.td")
+    c.rm("loki", "materialized", destroy_volumes=True)

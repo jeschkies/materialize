@@ -31,7 +31,7 @@ second line
 # Extract the JSON fields
 > CREATE VIEW loki_system_logs AS
   SELECT
-    val->>'text' AS text,
+    val->>'line' AS text,
     val->'labels' AS labels
   FROM (SELECT text::jsonb AS val FROM loki_system_logs_raw);
 
