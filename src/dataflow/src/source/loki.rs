@@ -41,23 +41,20 @@ impl LokiConnectionInfo {
         return LokiConnectionInfo { user, pw, endpoint };
     }
 
-    pub fn with_user(self, user: Option<String>) -> LokiConnectionInfo {
-        let mut c = self.clone();
-        c.user = user;
-        return c;
+    pub fn with_user(mut self, user: Option<String>) -> LokiConnectionInfo {
+        self.user = user;
+        return self;
     }
 
-    pub fn with_password(self, password: Option<String>) -> LokiConnectionInfo {
-        let mut c = self.clone();
-        c.pw = password;
-        return c;
+    pub fn with_password(mut self, password: Option<String>) -> LokiConnectionInfo {
+        self.pw = password;
+        return self;
     }
 
-    pub fn with_endpoint(self, address: Option<String>) -> LokiConnectionInfo {
+    pub fn with_endpoint(mut self, address: Option<String>) -> LokiConnectionInfo {
         if let Some(address) = address {
-            let mut c = self.clone();
-            c.endpoint = address;
-            return c;
+            self.endpoint = address;
+            return self;
         } else {
             return self;
         }
