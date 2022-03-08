@@ -43,7 +43,7 @@ impl LokiSourceReader {
         Self {
             source_id: source_id,
             conn_info: ConnectionInfo { user, pw, endpoint },
-            batch_window: Duration::from_secs(60),
+            batch_window: Duration::from_secs(10),
             query: query,
             client: reqwest::Client::new(),
         }
