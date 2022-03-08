@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    env,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -7,7 +8,6 @@ use async_trait::async_trait;
 use futures::future::TryFutureExt;
 use futures::stream::{self, StreamExt};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use tokio_stream::wrappers::IntervalStream;
 use tracing::warn;
 
@@ -19,30 +19,57 @@ use crate::source::{SimpleSource, SourceError, Timestamper};
 
 pub struct LokiSourceReader {
     source_id: SourceInstanceId,
-    conn_info: ConnectionInfo,
+    conn_info: LokiConnectionInfo,
     batch_window: Duration,
     query: String,
     client: reqwest::Client,
 }
 
 #[derive(Clone)]
-struct ConnectionInfo {
-    user: String,
-    pw: String,
+pub struct LokiConnectionInfo {
+    user: Option<String>,
+    pw: Option<String>,
     endpoint: String,
+}
+
+impl LokiConnectionInfo {
+    /// Loads connection information form the environment. Checks for `LOKI_ADDR`, `LOKI_USERNAME` and `LOKI_PASSWORD`.
+    pub fn from_env() -> LokiConnectionInfo {
+        let user = env::var("LOKI_USERNAME").ok();
+        let pw = env::var("LOKI_PASSWORD").ok();
+        let endpoint = env::var("LOKI_ADDR").unwrap_or("".to_string());
+        return LokiConnectionInfo { user, pw, endpoint };
+    }
+
+    pub fn with_user(mut self, user: Option<String>) -> LokiConnectionInfo {
+        self.user = user;
+        return self;
+    }
+
+    pub fn with_password(mut self, password: Option<String>) -> LokiConnectionInfo {
+        self.pw = password;
+        return self;
+    }
+
+    pub fn with_endpoint(mut self, address: Option<String>) -> LokiConnectionInfo {
+        if let Some(address) = address {
+            self.endpoint = address;
+            return self;
+        } else {
+            return self;
+        }
+    }
 }
 
 impl LokiSourceReader {
     pub fn new(
         source_id: SourceInstanceId,
-        user: String,
-        pw: String,
-        endpoint: String,
+        conn_info: LokiConnectionInfo,
         query: String,
     ) -> LokiSourceReader {
         Self {
-            source_id: source_id,
-            conn_info: ConnectionInfo { user, pw, endpoint },
+            source_id,
+            conn_info,
             batch_window: Duration::from_secs(10),
             query: query,
             client: reqwest::Client::new(),
@@ -51,15 +78,19 @@ impl LokiSourceReader {
 
     async fn query(
         &self,
-        conn_info: ConnectionInfo,
         start: u128,
         end: u128,
         query: String,
     ) -> Result<reqwest::Response, reqwest::Error> {
-        self.client
-            .get(format!("{}/loki/api/v1/query_range", conn_info.endpoint))
-            .basic_auth(conn_info.user, Some(conn_info.pw))
-            .query(&[("query", query)])
+        let mut r = self.client.get(format!(
+            "{}/loki/api/v1/query_range",
+            self.conn_info.endpoint
+        ));
+
+        if let Some(ref user) = self.conn_info.user {
+            r = r.basic_auth(user, self.conn_info.pw.clone());
+        };
+        r.query(&[("query", query)])
             .query(&[("start", format!("{}", start))])
             .query(&[("end", format!("{}", end))])
             .query(&[("direction", "forward")])
@@ -72,13 +103,11 @@ impl LokiSourceReader {
     ) -> impl stream::Stream<Item = Result<QueryResult, reqwest::Error>> + 'a {
         let polls = IntervalStream::new(tokio::time::interval(self.batch_window));
 
-        let conn_info = self.conn_info.clone();
         polls.then(move |_tick| {
             let end = SystemTime::now();
             let start = end - self.batch_window;
 
             self.query(
-                conn_info.clone(),
                 start
                     .duration_since(UNIX_EPOCH)
                     .expect("Start must be after epoch.")
@@ -183,9 +212,11 @@ mod test {
 
         let loki = LokiSourceReader::new(
             uid,
-            user.to_string(),
-            pw.to_string(),
-            endpoint.to_string(),
+            LokiConnectionInfo {
+                user: Some(user.to_string()),
+                pw: Some(pw.to_string()),
+                endpoint: endpoint.to_string(),
+            },
             "{job=\"systemd-journal\"}".to_owned(),
         );
 
