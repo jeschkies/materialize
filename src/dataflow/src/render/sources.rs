@@ -267,7 +267,7 @@ where
                 let connection_info = LokiConnectionInfo::from_env()
                     .with_user(loki_connector.user)
                     .with_password(loki_connector.password)
-                    .with_endpont(loki_connector.address);
+                    .with_endpoint(loki_connector.address);
 
                 let source = LokiSourceReader::new(uid, connection_info, loki_connector.query);
                 let ((ok_stream, err_stream), capability) =
