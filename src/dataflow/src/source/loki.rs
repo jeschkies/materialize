@@ -36,16 +36,24 @@ impl LokiConnectionInfo {
         let pw = env::var("LOKI_PASSWORD");
         let endpoint = env::var("LOKI_ADDR").unwrap_or_else(|_| "".to_string());
         info!("Connection info user={:?} pw={:?}", user, pw);
-        LokiConnectionInfo { user: user.ok(), pw: pw.ok(), endpoint }
+        LokiConnectionInfo {
+            user: user.ok(),
+            pw: pw.ok(),
+            endpoint,
+        }
     }
 
     pub fn with_user(mut self, user: Option<String>) -> LokiConnectionInfo {
-        self.user = user;
+        if user.is_some() {
+            self.user = user;
+        }
         self
     }
 
     pub fn with_password(mut self, password: Option<String>) -> LokiConnectionInfo {
-        self.pw = password;
+        if password.is_some() {
+            self.pw = password;
+        }
         self
     }
 
