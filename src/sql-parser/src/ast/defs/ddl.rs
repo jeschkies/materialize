@@ -597,7 +597,7 @@ impl AstDisplay for CreateSourceConnector {
                     f.write_str("' USER '");
                     f.write_str(&display::escape_single_quote_string(user));
                 }
-                if let Some(password) = password {
+                if password.is_some() {
                     f.write_str("' PASSWORD '***");
                 }
 

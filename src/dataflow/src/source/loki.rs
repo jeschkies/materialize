@@ -11,7 +11,7 @@ use mz_dataflow_types::SourceErrorDetails;
 use mz_expr::SourceInstanceId;
 use mz_repr::{Datum, Row};
 use serde::{Deserialize, Serialize};
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::source::{SimpleSource, SourceError, Timestamper};
 
@@ -40,12 +40,16 @@ impl LokiConnectionInfo {
     }
 
     pub fn with_user(mut self, user: Option<String>) -> LokiConnectionInfo {
-        self.user = user;
+        if user.is_some() {
+            self.user = user;
+        }
         self
     }
 
     pub fn with_password(mut self, password: Option<String>) -> LokiConnectionInfo {
-        self.pw = password;
+        if password.is_some() {
+            self.pw = password;
+        }
         self
     }
 
@@ -79,6 +83,7 @@ impl LokiSourceReader {
         if let Some(ref user) = self.conn_info.user {
             r = r.basic_auth(user, self.conn_info.pw.clone());
         };
+
         r.query(&[("query", &self.query)])
             .query(&[("start", format!("{}", start))])
             .query(&[("end", format!("{}", end))])
@@ -96,14 +101,10 @@ impl LokiSourceReader {
                 start.duration_since(UNIX_EPOCH).unwrap().as_nanos(),
                 end.duration_since(UNIX_EPOCH).unwrap().as_nanos(),
             )
-            .await
-            .context("Connection error")?
-            .error_for_status()
-            .context("HTTP error")?
+            .await?
             .bytes()
-            .await
-            .context("Download error")?;
-        let result: QueryResult = serde_json::from_slice(&response).context("Deserialize error")?;
+            .await?;
+        let result: QueryResult = serde_json::from_slice(&response)?;
         let Data::Streams(streams) = result.data;
 
         #[derive(Debug, Serialize)]
