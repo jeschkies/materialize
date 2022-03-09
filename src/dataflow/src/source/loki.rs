@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::HashMap,
     env,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -192,7 +193,7 @@ struct LogEntry<'a> {
     #[serde(borrow)]
     ts: &'a str,
     #[serde(borrow)]
-    line: &'a str,
+    line: Cow<'a, str>,
 }
 
 #[cfg(test)]
