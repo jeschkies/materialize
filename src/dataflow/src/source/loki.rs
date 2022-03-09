@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::HashMap,
     env,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -131,7 +132,7 @@ impl LokiSourceReader {
                 s.values.iter().map(|v| {
                     serde_json::to_string(&LokiRow {
                         timestamp: v.ts,
-                        line: v.line,
+                        line: &v.line,
                         labels: &s.labels,
                     })
                     .expect("Loki data should be valid JSON")
@@ -202,7 +203,7 @@ struct LogEntry<'a> {
     #[serde(borrow)]
     ts: &'a str,
     #[serde(borrow)]
-    line: &'a str,
+    line: Cow<'a, str>,
 }
 
 #[cfg(test)]
