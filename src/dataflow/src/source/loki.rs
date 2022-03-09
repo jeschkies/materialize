@@ -101,10 +101,14 @@ impl LokiSourceReader {
                 start.duration_since(UNIX_EPOCH).unwrap().as_nanos(),
                 end.duration_since(UNIX_EPOCH).unwrap().as_nanos(),
             )
-            .await?
+            .await
+            .context("Connection error")?
+            .error_for_status()
+            .context("HTTP error")?
             .bytes()
-            .await?;
-        let result: QueryResult = serde_json::from_slice(&response)?;
+            .await
+            .context("Download error")?;
+        let result: QueryResult = serde_json::from_slice(&response).context("Deserialize error")?;
         let Data::Streams(streams) = result.data;
 
         #[derive(Debug, Serialize)]
