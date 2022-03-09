@@ -122,7 +122,7 @@ impl LokiSourceReader {
                 s.values.iter().map(|v| {
                     serde_json::to_string(&LokiRow {
                         timestamp: v.ts,
-                        line: v.line,
+                        line: &v.line,
                         labels: &s.labels,
                     })
                     .expect("Loki data should be valid JSON")
