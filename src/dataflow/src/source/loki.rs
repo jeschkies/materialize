@@ -155,7 +155,7 @@ impl SimpleSource for LokiSourceReader {
                     Ok(())
                 }
                 Err(e) => {
-                    warn!("Loki error: {}", e);
+                    warn!("Loki error: {:#}", e);
                     Err(SourceError::new(
                         self.source_id,
                         SourceErrorDetails::Persistence(e.to_string()),
