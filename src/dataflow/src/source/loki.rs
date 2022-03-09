@@ -33,15 +33,10 @@ pub struct LokiConnectionInfo {
 impl LokiConnectionInfo {
     /// Loads connection information form the environment. Checks for `LOKI_ADDR`, `LOKI_USERNAME` and `LOKI_PASSWORD`.
     pub fn from_env() -> LokiConnectionInfo {
-        let user = env::var("LOKI_USERNAME");
-        let pw = env::var("LOKI_PASSWORD");
+        let user = env::var("LOKI_USERNAME").ok();
+        let pw = env::var("LOKI_PASSWORD").ok();
         let endpoint = env::var("LOKI_ADDR").unwrap_or_else(|_| "".to_string());
-        info!("Connection info user={:?} pw={:?}", user, pw);
-        LokiConnectionInfo {
-            user: user.ok(),
-            pw: pw.ok(),
-            endpoint,
-        }
+        LokiConnectionInfo { user, pw, endpoint }
     }
 
     pub fn with_user(mut self, user: Option<String>) -> LokiConnectionInfo {
