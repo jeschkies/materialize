@@ -9,7 +9,7 @@ use futures::future::TryFutureExt;
 use futures::stream::{self, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio_stream::wrappers::IntervalStream;
-use tracing::warn;
+use tracing::{info, warn};
 
 use mz_dataflow_types::SourceErrorDetails;
 use mz_expr::SourceInstanceId;
@@ -35,19 +35,24 @@ pub struct LokiConnectionInfo {
 impl LokiConnectionInfo {
     /// Loads connection information form the environment. Checks for `LOKI_ADDR`, `LOKI_USERNAME` and `LOKI_PASSWORD`.
     pub fn from_env() -> LokiConnectionInfo {
-        let user = env::var("LOKI_USERNAME").ok();
-        let pw = env::var("LOKI_PASSWORD").ok();
+        let user = env::var("LOKI_USERNAME");
+        let pw = env::var("LOKI_PASSWORD");
         let endpoint = env::var("LOKI_ADDR").unwrap_or("".to_string());
-        return LokiConnectionInfo { user, pw, endpoint };
+        info!("Setting connection info user={:?} pw={:?}", user, pw);
+        return LokiConnectionInfo { user: user.ok(), pw: pw.ok(), endpoint };
     }
 
     pub fn with_user(mut self, user: Option<String>) -> LokiConnectionInfo {
-        self.user = user;
+        if user.is_some() {
+            self.user = user;
+        }
         return self;
     }
 
     pub fn with_password(mut self, password: Option<String>) -> LokiConnectionInfo {
-        self.pw = password;
+        if password.is_some() {
+            self.pw = password;
+        }
         return self;
     }
 
@@ -107,6 +112,8 @@ impl LokiSourceReader {
             let end = SystemTime::now();
             let start = end - self.batch_window;
 
+            info!("Polling batch start={:?}, end={:?}", start, end);
+
             self.query(
                 start
                     .duration_since(UNIX_EPOCH)
@@ -125,6 +132,7 @@ impl LokiSourceReader {
 #[async_trait]
 impl SimpleSource for LokiSourceReader {
     async fn start(mut self, timestamper: &Timestamper) -> Result<(), SourceError> {
+        info!("Starting Loki stream addr={:?}", self.conn_info.endpoint);
         let stream = self.new_stream();
         tokio::pin!(stream);
 
@@ -151,6 +159,8 @@ impl SimpleSource for LokiSourceReader {
                             })
                         })
                         .collect();
+
+                    info!("Inserting next batch lines={:?}", lines.len());
 
                     for line in lines {
                         let row = Row::pack_slice(&[Datum::String(&line)]);
