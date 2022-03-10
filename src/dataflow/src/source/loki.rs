@@ -93,6 +93,7 @@ impl LokiSourceReader {
         url.query_pairs_mut()
             .clear()
             .append_pair("query", &self.query)
+            .append_pair("limit", "5000")
             .append_pair("start", &start.to_string());
         let mut request = url.into_client_request().context("creating Loki request")?;
         if let Some(ref user) = self.conn_info.user {
