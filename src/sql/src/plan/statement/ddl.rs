@@ -538,6 +538,7 @@ pub fn plan_create_source(
         CreateSourceConnector::Loki {
             address,
             query,
+            batch_window,
             user,
             password,
         } => {
@@ -550,6 +551,8 @@ pub fn plan_create_source(
                 query: query.clone(),
                 user: user.clone(),
                 password: password.clone(),
+                batch_window: batch_window
+                    .map_or_else(|| Duration::from_secs(10), |x| Duration::from_secs(x)),
             });
             (connector, SourceDataEncoding::Single(DataEncoding::Text))
         }

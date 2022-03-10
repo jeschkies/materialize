@@ -65,13 +65,14 @@ impl LokiSourceReader {
     pub fn new(
         source_id: SourceInstanceId,
         mut conn_info: LokiConnectionInfo,
+        batch_window: Duration,
         query: String,
     ) -> LokiSourceReader {
         conn_info.endpoint = format!("{}/loki/api/v1/query_range", conn_info.endpoint);
         Self {
             source_id,
             conn_info,
-            batch_window: Duration::from_secs(10),
+            batch_window,
             query,
             client: reqwest::Client::new(),
         }
@@ -224,6 +225,7 @@ mod test {
                 pw: Some(pw.to_string()),
                 endpoint: endpoint.to_string(),
             },
+            Duration::from_secs(1),
             "{job=\"systemd-journal\"}".to_owned(),
         );
 

@@ -1428,6 +1428,7 @@ pub mod sources {
     pub struct LokiSourceConnector {
         pub address: Option<String>,
         pub query: String,
+        pub batch_window: Duration,
         pub user: Option<String>,
         pub password: Option<String>,
     }
