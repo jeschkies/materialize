@@ -2145,18 +2145,11 @@ impl<'a> Parser<'a> {
                     None
                 };
 
-                let batch_window = if self.parse_keyword(REFRESH) {
-                    Some(self.parse_literal_uint()?)
-                } else {
-                    None
-                };
-
                 Ok(CreateSourceConnector::Loki {
                     address,
                     query,
                     user,
                     password,
-                    batch_window,
                 })
             }
             _ => unreachable!(),
