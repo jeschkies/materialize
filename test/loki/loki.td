@@ -74,5 +74,3 @@ another line
 # > CREATE MATERIALIZED VIEW depends_vol_unknown AS SELECT * FROM avg_bid, file_src
 # > SELECT name, volatility from mz_views WHERE name = 'depends_vol_unknown'
 # depends_vol_unknown   volatile
-
-

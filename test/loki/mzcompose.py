@@ -8,11 +8,7 @@
 # by the Apache License, Version 2.0.
 
 from materialize.mzcompose import Composition
-from materialize.mzcompose.services import (
-    Loki,
-    Materialized,
-    Testdrive,
-)
+from materialize.mzcompose.services import Loki, Materialized, Testdrive
 
 SERVICES = [
     Loki(),

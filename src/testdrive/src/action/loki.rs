@@ -81,7 +81,7 @@ impl Client {
             .collect();
         let body = LokiApiV1Push {
             streams: vec![Stream {
-                stream: &labels,
+                stream: labels,
                 values: &values,
             }],
         };
