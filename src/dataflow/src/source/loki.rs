@@ -2,25 +2,30 @@ use std::{
     borrow::Cow,
     collections::HashMap,
     env,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    io::Write,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::Context;
 use async_trait::async_trait;
+use base64::write::EncoderWriter as Base64Encoder;
+use futures::StreamExt;
 use mz_dataflow_types::SourceErrorDetails;
 use mz_expr::SourceInstanceId;
+use mz_ore::display::DisplayExt;
 use mz_repr::{Datum, Row};
 use serde::{Deserialize, Serialize};
-use tracing::{info, warn};
+use tokio::net::TcpStream;
+use tokio_tungstenite::{
+    connect_async, tungstenite::client::IntoClientRequest, MaybeTlsStream, WebSocketStream,
+};
 
 use crate::source::{SimpleSource, SourceError, Timestamper};
 
 pub struct LokiSourceReader {
     source_id: SourceInstanceId,
     conn_info: LokiConnectionInfo,
-    batch_window: Duration,
     query: String,
-    client: reqwest::Client,
 }
 
 #[derive(Clone)]
@@ -65,125 +70,116 @@ impl LokiSourceReader {
     pub fn new(
         source_id: SourceInstanceId,
         mut conn_info: LokiConnectionInfo,
-        batch_window: Duration,
         query: String,
     ) -> LokiSourceReader {
-        conn_info.endpoint = format!("{}/loki/api/v1/query_range", conn_info.endpoint);
+        conn_info.endpoint = format!("{}/loki/api/v1/tail", conn_info.endpoint);
         Self {
             source_id,
             conn_info,
-            batch_window,
             query,
-            client: reqwest::Client::new(),
         }
     }
 
-    #[tracing::instrument(skip(self), level = "trace")]
-    async fn query(&self, start: u128, end: u128) -> Result<reqwest::Response, reqwest::Error> {
-        let mut r = self.client.get(&self.conn_info.endpoint);
+    async fn get_stream(
+        &self,
+    ) -> Result<WebSocketStream<MaybeTlsStream<TcpStream>>, anyhow::Error> {
+        let start = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .context("Start must be after unix epoch")?
+            .as_nanos();
+        let mut url = url::Url::parse(&self.conn_info.endpoint).context("parsing Loki endpoint")?;
+        url.set_scheme("wss")
+            .map_err(|_| anyhow::anyhow!("error switching Loki endpoint to wss scheme"))?;
+        url.query_pairs_mut()
+            .clear()
+            .append_pair("query", &self.query)
+            .append_pair("start", &start.to_string());
+        let mut request = url.into_client_request().context("creating Loki request")?;
         if let Some(ref user) = self.conn_info.user {
-            r = r.basic_auth(user, self.conn_info.pw.clone());
-        };
-
-        r.query(&[("query", &self.query)])
-            .query(&[("start", format!("{}", start))])
-            .query(&[("end", format!("{}", end))])
-            .query(&[("direction", "forward")])
-            .send()
-            .await
-    }
-
-    #[tracing::instrument(skip(self), level = "trace")]
-    async fn tick(&self) -> Result<Vec<String>, anyhow::Error> {
-        let end = SystemTime::now();
-        let start = end - self.batch_window;
-        let response = self
-            .query(
-                start.duration_since(UNIX_EPOCH).unwrap().as_nanos(),
-                end.duration_since(UNIX_EPOCH).unwrap().as_nanos(),
-            )
-            .await
-            .context("Connection error")?
-            .error_for_status()
-            .context("HTTP error")?
-            .bytes()
-            .await
-            .context("Download error")?;
-        let result: QueryResult = serde_json::from_slice(&response).context("Deserialize error")?;
-        let Data::Streams(streams) = result.data;
-
-        #[derive(Debug, Serialize)]
-        struct LokiRow<'a> {
-            timestamp: &'a str,
-            line: &'a str,
-            labels: &'a HashMap<Cow<'a, str>, Cow<'a, str>>,
+            // Taken from `reqwest::RequestBuilder::basic_auth`
+            let mut auth = b"Basic ".to_vec();
+            {
+                let mut encoder = Base64Encoder::new(&mut auth, base64::STANDARD);
+                // The unwraps here are fine because Vec::write* is infallible.
+                write!(encoder, "{user}:").unwrap();
+                if let Some(ref password) = self.conn_info.pw {
+                    write!(encoder, "{password}").unwrap();
+                }
+            }
+            request
+                .headers_mut()
+                // The unwrap below is fine because we've just base64 encoded the user supplied input.
+                .insert("Authorization", auth.try_into().unwrap());
         }
-
-        // TODO(bsull): we could get rid of this intermediate Vec if we handled the timestamp sending
-        // in this function instead, but for now it's quite nice to be able to see the resulting JSON
-        // in a test.
-        let lines: Vec<String> = streams
-            .iter()
-            .flat_map(|s| {
-                s.values.iter().map(|v| {
-                    serde_json::to_string(&LokiRow {
-                        timestamp: v.ts,
-                        line: &v.line,
-                        labels: &s.labels,
-                    })
-                    .expect("Loki data should be valid JSON")
-                })
-            })
-            .collect();
-        Ok(lines)
+        let (stream, response) = connect_async(request)
+            .await
+            .context("connecting to Loki websocket")?;
+        anyhow::ensure!(response.status().is_informational() || response.status().is_success());
+        Ok(stream)
     }
 }
 
 #[async_trait]
 impl SimpleSource for LokiSourceReader {
     async fn start(mut self, timestamper: &Timestamper) -> Result<(), SourceError> {
-        let mut interval = tokio::time::interval(self.batch_window);
-        loop {
-            interval.tick().await;
-            match self.tick().await {
-                Ok(lines) => {
-                    let tx = timestamper.start_tx().await;
-                    for line in lines {
-                        tx.insert(Row::pack_slice(&[Datum::String(&line)]))
-                            .await
-                            .map_err(|e| {
-                                SourceError::new(
-                                    self.source_id,
-                                    SourceErrorDetails::Persistence(e.to_string()),
-                                )
-                            })?;
-                    }
-                    Ok(())
+        let mut stream = self.get_stream().await.map_err(|e| {
+            SourceError::new(
+                self.source_id,
+                SourceErrorDetails::Initialization(e.to_string_alt()),
+            )
+        })?;
+        while let Some(Ok(message)) = stream.next().await {
+            let message = message.into_data();
+            if message.is_empty() {
+                // Loki returns returns an empty message if there have been no logs
+                // since last tick, so we can just continue here.
+                continue;
+            }
+            let TailResponse { streams } = serde_json::from_slice(&message).map_err(|e| {
+                SourceError::new(
+                    self.source_id,
+                    SourceErrorDetails::Persistence(e.to_string_alt()),
+                )
+            })?;
+
+            #[derive(Debug, Serialize)]
+            struct LokiRow<'a> {
+                timestamp: &'a str,
+                line: &'a str,
+                labels: &'a HashMap<Cow<'a, str>, Cow<'a, str>>,
+            }
+
+            // TODO(bsull): we could get rid of this intermediate Vec if we handled the timestamp sending
+            // in this function instead, but for now it's quite nice to be able to see the resulting JSON
+            // in a test.
+            let tx = timestamper.start_tx().await;
+            for s in streams {
+                for v in s.values {
+                    let row = serde_json::to_string(&LokiRow {
+                        timestamp: v.ts,
+                        line: &v.line,
+                        labels: &s.labels,
+                    })
+                    .expect("Loki data should be valid JSON");
+                    tx.insert(Row::pack_slice(&[Datum::String(&row)]))
+                        .await
+                        .map_err(|e| {
+                            SourceError::new(
+                                self.source_id,
+                                SourceErrorDetails::Persistence(e.to_string_alt()),
+                            )
+                        })?;
                 }
-                Err(e) => {
-                    warn!("Loki error: {:#}", e);
-                    Err(SourceError::new(
-                        self.source_id,
-                        SourceErrorDetails::Persistence(e.to_string()),
-                    ))
-                }
-            }?;
+            }
         }
+        Ok(())
     }
 }
 
 #[derive(Debug, Deserialize)]
-struct QueryResult<'a> {
-    status: &'a str,
-    #[serde(borrow)]
-    data: Data<'a>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(tag = "resultType", content = "result")]
-enum Data<'a> {
+struct TailResponse<'a> {
     #[serde(borrow, rename = "streams")]
-    Streams(Vec<Stream<'a>>),
+    streams: Vec<Stream<'a>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -206,10 +202,11 @@ struct LogEntry<'a> {
 mod test {
 
     use super::*;
+    use futures::TryStreamExt;
     use mz_expr::GlobalId;
 
     #[tokio::test]
-    async fn connect() {
+    async fn connect() -> anyhow::Result<()> {
         let user = "5442";
         let pw = "";
         let endpoint = "https://logs-prod-us-central1.grafana.net";
@@ -225,13 +222,21 @@ mod test {
                 pw: Some(pw.to_string()),
                 endpoint: endpoint.to_string(),
             },
-            Duration::from_secs(1),
             "{job=\"systemd-journal\"}".to_owned(),
         );
 
-        for _ in 0..5 {
-            println!("{:?}", loki.tick().await);
-        }
+        loki.get_stream()
+            .await?
+            .take(5)
+            .try_for_each(|data| async move {
+                println!(
+                    "{:?}",
+                    serde_json::from_slice::<TailResponse>(&data.into_data()).unwrap()
+                );
+                Ok(())
+            })
+            .await?;
+        Ok(())
         // let fut = loki.new_stream().take(5);
         // fut.for_each(|data| async move {
         //     println!("{:?}", data);

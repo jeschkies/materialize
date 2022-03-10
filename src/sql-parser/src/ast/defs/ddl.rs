@@ -503,8 +503,6 @@ pub enum CreateSourceConnector {
         user: Option<String>,
         // The password used to authenticate with Loki.
         password: Option<String>,
-        /// The frequency with which to update, in seconds.
-        batch_window: Option<u64>,
     },
 }
 
@@ -587,7 +585,6 @@ impl AstDisplay for CreateSourceConnector {
                 query,
                 user,
                 password,
-                batch_window,
             } => {
                 f.write_str("LOKI QUERY '");
                 f.write_str(&display::escape_single_quote_string(query));
@@ -602,11 +599,6 @@ impl AstDisplay for CreateSourceConnector {
                 }
                 if password.is_some() {
                     f.write_str("' PASSWORD '***");
-                }
-                if let Some(window) = batch_window {
-                    f.write_str("' REFRESH ");
-                    f.write_str(window);
-                    f.write_str("s");
                 }
                 f.write_str("'");
             }

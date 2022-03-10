@@ -269,12 +269,7 @@ where
                     .with_password(loki_connector.password)
                     .with_endpoint(loki_connector.address);
 
-                let source = LokiSourceReader::new(
-                    uid,
-                    connection_info,
-                    loki_connector.batch_window,
-                    loki_connector.query,
-                );
+                let source = LokiSourceReader::new(uid, connection_info, loki_connector.query);
                 let ((ok_stream, err_stream), capability) =
                     source::create_source_simple(source_config, source);
                 error_collections.push(
