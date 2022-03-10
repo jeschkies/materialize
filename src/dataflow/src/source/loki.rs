@@ -116,7 +116,7 @@ impl LokiSourceReader {
         struct LokiRow<'a> {
             timestamp: &'a str,
             line: &'a str,
-            labels: &'a HashMap<&'a str, &'a str>,
+            labels: &'a HashMap<Cow<'a, str>, Cow<'a, str>>,
         }
 
         // TODO(bsull): we could get rid of this intermediate Vec if we handled the timestamp sending
@@ -189,7 +189,7 @@ enum Data<'a> {
 #[derive(Debug, Deserialize)]
 struct Stream<'a> {
     #[serde(borrow, rename = "stream")]
-    labels: HashMap<&'a str, &'a str>,
+    labels: HashMap<Cow<'a, str>, Cow<'a, str>>,
     #[serde(borrow)]
     values: Vec<LogEntry<'a>>,
 }
