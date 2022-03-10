@@ -2124,15 +2124,14 @@ impl<'a> Parser<'a> {
                 })
             }
             LOKI => {
+                self.expect_keyword(QUERY)?;
+                let query = self.parse_literal_string()?;
+
                 let address = if self.parse_keyword(ADDRESS) {
                     Some(self.parse_literal_string()?)
                 } else {
                     None
                 };
-
-                self.expect_keyword(QUERY)?;
-                let query = self.parse_literal_string()?;
-
                 let user = if self.parse_keyword(USER) {
                     Some(self.parse_literal_string()?)
                 } else {
