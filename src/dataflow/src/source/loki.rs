@@ -22,12 +22,17 @@ use tokio_tungstenite::{
 
 use crate::source::{SimpleSource, SourceError, Timestamper};
 
+/// A [`SimpleSource`] that reads from [Loki] over websockets using the [tail] endpoint.
+///
+/// [Loki]: https://grafana.com/docs/loki/latest/
+/// [Loki]: https://grafana.com/docs/loki/latest/api/#get-lokiapiv1tail
 pub struct LokiSourceReader {
     source_id: SourceInstanceId,
     conn_info: LokiConnectionInfo,
     query: String,
 }
 
+/// Loki connection information.
 #[derive(Clone)]
 pub struct LokiConnectionInfo {
     user: Option<String>,
@@ -44,6 +49,7 @@ impl LokiConnectionInfo {
         LokiConnectionInfo { user, pw, endpoint }
     }
 
+    /// Sets the username.
     pub fn with_user(mut self, user: Option<String>) -> LokiConnectionInfo {
         if user.is_some() {
             self.user = user;
@@ -51,6 +57,7 @@ impl LokiConnectionInfo {
         self
     }
 
+    /// Sets the password.
     pub fn with_password(mut self, password: Option<String>) -> LokiConnectionInfo {
         if password.is_some() {
             self.pw = password;
@@ -58,6 +65,7 @@ impl LokiConnectionInfo {
         self
     }
 
+    /// Sets the endpoint.
     pub fn with_endpoint(mut self, address: Option<String>) -> LokiConnectionInfo {
         if let Some(address) = address {
             self.endpoint = address;
@@ -67,6 +75,7 @@ impl LokiConnectionInfo {
 }
 
 impl LokiSourceReader {
+    /// Create a new `LokiSourceReader`.
     pub fn new(
         source_id: SourceInstanceId,
         mut conn_info: LokiConnectionInfo,
