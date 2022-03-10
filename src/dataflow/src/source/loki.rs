@@ -3,7 +3,7 @@ use std::{
     collections::HashMap,
     env,
     io::Write,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::Context;
@@ -19,6 +19,7 @@ use tokio::net::TcpStream;
 use tokio_tungstenite::{
     connect_async, tungstenite::client::IntoClientRequest, MaybeTlsStream, WebSocketStream,
 };
+use tracing::warn;
 
 use crate::source::{SimpleSource, SourceError, Timestamper};
 
@@ -132,57 +133,69 @@ impl LokiSourceReader {
 #[async_trait]
 impl SimpleSource for LokiSourceReader {
     async fn start(mut self, timestamper: &Timestamper) -> Result<(), SourceError> {
-        let mut stream = self.get_stream().await.map_err(|e| {
-            SourceError::new(
-                self.source_id,
-                SourceErrorDetails::Initialization(e.to_string_alt()),
-            )
-        })?;
-        while let Some(Ok(message)) = stream.next().await {
-            let message = message.into_data();
-            if message.is_empty() {
-                // Loki returns returns an empty message if there have been no logs
-                // since last tick, so we can just continue here.
-                continue;
-            }
-            let TailResponse { streams } = serde_json::from_slice(&message).map_err(|e| {
+        'outer: loop {
+            let mut stream = self.get_stream().await.map_err(|e| {
                 SourceError::new(
                     self.source_id,
-                    SourceErrorDetails::Persistence(e.to_string_alt()),
+                    SourceErrorDetails::Initialization(e.to_string_alt()),
                 )
             })?;
+            'inner: while let Some(message) = stream.next().await {
+                let message = match message {
+                    Ok(m) => m.into_data(),
+                    Err(error) => {
+                        // We probably won't be able to continue with this stream; let's reconnect
+                        // and start again.
+                        warn!(%error, "Error in Loki stream. Attempting reconnect in 5 seconds");
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                        continue 'outer;
+                    }
+                };
+                if message.is_empty() {
+                    // Loki returns returns an empty message if there have been no logs
+                    // since last tick, so we can just continue here.
+                    continue 'inner;
+                }
+                let streams = match serde_json::from_slice(&message) {
+                    Ok(TailResponse { streams }) => streams,
+                    Err(error) => {
+                        let message = String::from_utf8(message);
+                        warn!(?message, %error, "Error deserializing Loki stream");
+                        continue 'inner;
+                    }
+                };
 
-            #[derive(Debug, Serialize)]
-            struct LokiRow<'a> {
-                timestamp: &'a str,
-                line: &'a str,
-                labels: &'a HashMap<Cow<'a, str>, Cow<'a, str>>,
-            }
+                #[derive(Debug, Serialize)]
+                struct LokiRow<'a> {
+                    timestamp: &'a str,
+                    line: &'a str,
+                    labels: &'a HashMap<Cow<'a, str>, Cow<'a, str>>,
+                }
 
-            // TODO(bsull): we could get rid of this intermediate Vec if we handled the timestamp sending
-            // in this function instead, but for now it's quite nice to be able to see the resulting JSON
-            // in a test.
-            let tx = timestamper.start_tx().await;
-            for s in streams {
-                for v in s.values {
-                    let row = serde_json::to_string(&LokiRow {
-                        timestamp: v.ts,
-                        line: &v.line,
-                        labels: &s.labels,
-                    })
-                    .expect("Loki data should be valid JSON");
-                    tx.insert(Row::pack_slice(&[Datum::String(&row)]))
-                        .await
-                        .map_err(|e| {
-                            SourceError::new(
-                                self.source_id,
-                                SourceErrorDetails::Persistence(e.to_string_alt()),
-                            )
-                        })?;
+                // TODO(bsull): we could get rid of this intermediate Vec if we handled the timestamp sending
+                // in this function instead, but for now it's quite nice to be able to see the resulting JSON
+                // in a test.
+                let tx = timestamper.start_tx().await;
+                for s in streams {
+                    for v in s.values {
+                        let row = serde_json::to_string(&LokiRow {
+                            timestamp: v.ts,
+                            line: &v.line,
+                            labels: &s.labels,
+                        })
+                        .expect("Loki data should be valid JSON");
+                        tx.insert(Row::pack_slice(&[Datum::String(&row)]))
+                            .await
+                            .map_err(|e| {
+                                SourceError::new(
+                                    self.source_id,
+                                    SourceErrorDetails::Persistence(e.to_string_alt()),
+                                )
+                            })?;
+                    }
                 }
             }
         }
-        Ok(())
     }
 }
 
