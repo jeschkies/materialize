@@ -41,9 +41,9 @@ use mz_dataflow_types::{
         },
         provide_default_metadata, DebeziumDedupProjection, DebeziumEnvelope, DebeziumMode,
         DebeziumSourceProjection, ExternalSourceConnector, FileSourceConnector, IncludedColumnPos,
-        KafkaSourceConnector, KeyEnvelope, KinesisSourceConnector, PostgresSourceConnector,
-        PubNubSourceConnector, S3SourceConnector, SourceConnector, SourceEnvelope, Timeline,
-        UnplannedSourceEnvelope, UpsertStyle,
+        KafkaSourceConnector, KeyEnvelope, KinesisSourceConnector, LokiSourceConnector,
+        PostgresSourceConnector, PubNubSourceConnector, S3SourceConnector, SourceConnector,
+        SourceEnvelope, Timeline, UnplannedSourceEnvelope, UpsertStyle,
     },
 };
 use mz_expr::{CollectionPlan, GlobalId};
@@ -540,6 +540,24 @@ pub fn plan_create_source(
             let connector = ExternalSourceConnector::PubNub(PubNubSourceConnector {
                 subscribe_key: subscribe_key.clone(),
                 channel: channel.clone(),
+            });
+            (connector, SourceDataEncoding::Single(DataEncoding::Text))
+        }
+        CreateSourceConnector::Loki {
+            address,
+            query,
+            user,
+            password,
+        } => {
+            match format {
+                CreateSourceFormat::None | CreateSourceFormat::Bare(Format::Text) => (),
+                _ => bail!("CREATE SOURCE ... LOKI must specify FORMAT TEXT"),
+            }
+            let connector = ExternalSourceConnector::Loki(LokiSourceConnector {
+                address: address.clone(),
+                query: query.clone(),
+                user: user.clone(),
+                password: password.clone(),
             });
             (connector, SourceDataEncoding::Single(DataEncoding::Text))
         }

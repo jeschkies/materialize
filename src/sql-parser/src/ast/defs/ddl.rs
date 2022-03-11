@@ -496,6 +496,16 @@ pub enum CreateSourceConnector {
         /// The PubNub channel to subscribe to
         channel: String,
     },
+    Loki {
+        /// The address of the Loki HTTP endpoint.
+        address: Option<String>,
+        /// The LogQL query to issue to Loki.
+        query: String,
+        // The user name used to authenticate with Loki.
+        user: Option<String>,
+        // The password used to authenticate with Loki.
+        password: Option<String>,
+    },
 }
 
 impl AstDisplay for CreateSourceConnector {
@@ -575,6 +585,29 @@ impl AstDisplay for CreateSourceConnector {
                 f.write_str(&display::escape_single_quote_string(subscribe_key));
                 f.write_str("' CHANNEL '");
                 f.write_str(&display::escape_single_quote_string(channel));
+                f.write_str("'");
+            }
+            CreateSourceConnector::Loki {
+                address,
+                query,
+                user,
+                password,
+            } => {
+                f.write_str("LOKI QUERY '");
+                f.write_str(&display::escape_single_quote_string(query));
+
+                if let Some(address) = address {
+                    f.write_str("' ADDRESS '");
+                    f.write_str(&display::escape_single_quote_string(address));
+                }
+                if let Some(user) = user {
+                    f.write_str("' USER '");
+                    f.write_str(&display::escape_single_quote_string(user));
+                }
+                if let Some(password) = password {
+                    f.write_str("' PASSWORD '");
+                    f.write_str(&display::escape_single_quote_string(password));
+                }
                 f.write_str("'");
             }
         }

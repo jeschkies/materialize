@@ -47,8 +47,8 @@ use crate::server::StorageState;
 use crate::source::timestamp::{AssignedTimestamp, SourceTimestamp};
 use crate::source::{
     self, DecodeResult, FileSourceReader, KafkaSourceReader, KinesisSourceReader,
-    PersistentTimestampBindingsConfig, PostgresSourceReader, PubNubSourceReader, S3SourceReader,
-    SourceConfig,
+    LokiConnectionInfo, LokiSourceReader, PersistentTimestampBindingsConfig, PostgresSourceReader,
+    PubNubSourceReader, S3SourceReader, SourceConfig,
 };
 
 /// A type-level enum that holds one of two types of sources depending on their message type
@@ -303,6 +303,24 @@ where
                 );
 
                 (ok_stream.as_collection(), capability)
+            } else if let ExternalSourceConnector::Loki(loki_connector) = connector {
+                // Load connection information from env and override with explicitly passed info.
+                let connection_info = LokiConnectionInfo::from_env()
+                    .with_user(loki_connector.user)
+                    .with_password(loki_connector.password)
+                    .with_endpoint(loki_connector.address);
+
+                let source = LokiSourceReader::new(uid, connection_info, loki_connector.query);
+                let ((ok_stream, err_stream), capability) =
+                    source::create_source_simple(source_config, source);
+                error_collections.push(
+                    err_stream
+                        .map(DataflowError::SourceError)
+                        .pass_through("source-errors")
+                        .as_collection(),
+                );
+
+                (ok_stream.as_collection(), capability)
             } else if let ExternalSourceConnector::Postgres(pg_connector) = connector {
                 let source =
                     PostgresSourceReader::new(uid, pg_connector, source_config.base_metrics);
@@ -364,6 +382,7 @@ where
                         );
                         ((SourceType::ByteStream(ok), ts, err), cap)
                     }
+                    ExternalSourceConnector::Loki(_) => unreachable!(),
                     ExternalSourceConnector::Postgres(_) => unreachable!(),
                     ExternalSourceConnector::PubNub(_) => unreachable!(),
                 };

@@ -23,6 +23,7 @@
 #
 # For details on the code that is generated, see keywords.rs.
 
+Address
 All
 Alter
 And
@@ -163,6 +164,7 @@ List
 Local
 Log
 Login
+Loki
 Map
 Matching
 Materialize
@@ -199,6 +201,7 @@ Ordinality
 Outer
 Over
 Partition
+Password
 Physical
 Plan
 Plans

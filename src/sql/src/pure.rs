@@ -212,6 +212,9 @@ pub fn purify(
                     *details = Some(hex::encode(details_proto.encode_to_vec()));
                 }
                 CreateSourceConnector::PubNub { .. } => (),
+                CreateSourceConnector::Loki { .. } => {
+                    // TODO(bsull): do we need to do anything here?
+                }
             }
 
             purify_source_format(
