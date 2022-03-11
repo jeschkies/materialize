@@ -159,8 +159,8 @@ impl SimpleSource for LokiSourceReader {
                 let streams = match serde_json::from_slice(&message) {
                     Ok(TailResponse { streams }) => streams,
                     Err(error) => {
-                        let message = String::from_utf8(message);
-                        warn!(?message, %error, "Error deserializing Loki stream");
+                        let response = String::from_utf8(message);
+                        warn!(?response, %error, "Error deserializing Loki stream");
                         continue 'inner;
                     }
                 };
